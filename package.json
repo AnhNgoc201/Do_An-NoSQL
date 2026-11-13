@@ -1,0 +1,20 @@
+{
+  "name": "order-queue-app",
+  "version": "1.0.0",
+  "description": "P3X Redis UI và hàng đợi xử lý đơn hàng trực tuyến — ứng dụng minh họa NoSQL",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test-worker-delay.js && node test-integration.js",
+    "test:fulfillment": "node test-fulfillment.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0",
+    "redis": "^6.3.0"
+  }
+}

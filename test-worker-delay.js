@@ -1,0 +1,8 @@
+const assert=require('node:assert/strict');
+const {createWorker,claim,finish}=require('./worker');
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function until(predicate,timeout=5000){const deadline=Date.now()+timeout;while(!predicate()){if(Date.now()>deadline)throw Error('Worker timing test timed out');await sleep(25);}}
+(async()=>{const settings=new Map(),queue=['TEST-ORDER'],finished=[];const redis={isReady:true,get:async key=>settings.get(key)||null,set:async(key,value)=>{settings.set(key,value);return 'OK';},eval:async script=>{if(script===claim)return queue.shift()||null;if(script===finish){finished.push(Date.now());return 'COMPLETED';}return 0;}};
+ const worker=createWorker(redis);worker.setEnabled(false);await worker.initialize();await worker.setProcessingDelay(2000);worker.setEnabled(true);
+ try{await until(()=>worker.status().busy&&worker.status().activeUntil);const before=worker.status(),startedAt=before.activeUntil-2000;await worker.setProcessingDelay(1000);assert.equal(worker.status().processingDelayMs,1000);assert.equal(worker.status().activeUntil,before.activeUntil,'Changing delay must not alter active order deadline');await until(()=>finished.length>0);assert.ok(finished[0]-startedAt>=1900,'Active order must keep its original delay');const restored=createWorker(redis);restored.setEnabled(false);await restored.initialize();assert.equal(restored.status().processingDelayMs,1000,'Saved delay must survive worker recreation');console.log('PASS: adjustable delay persists and does not shorten the active order.');}finally{worker.setEnabled(false);redis.isReady=false;}
+})().catch(error=>{console.error(error);process.exitCode=1;});
