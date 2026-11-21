@@ -18,9 +18,9 @@ if redis.call('HGET',k,'status')~='PROCESSING' then redis.call('LREM','order:pro
 destinations(k)
 fulfillmentDestinations()
 local now=clockMs();local untilMs=tonumber(redis.call('HGET',k,'stockWaitDeadlineAt'))
-if untilMs and now>=untilMs then waitStock(k,now,ARGV[2]);return 'WAITING_STOCK' end
+if untilMs and now>=untilMs then waitStock(k,now,ARGV[2]);return redis.call('HGET',k,'status') end
 local valid,enough,demands,sizes=stock(k)
-if valid and not enough then waitStock(k,now,ARGV[2]);return 'WAITING_STOCK' end
+if valid and not enough then waitStock(k,now,ARGV[2]);return redis.call('HGET',k,'status') end
 local status='FAILED';local message='Dữ liệu đơn hoặc sản phẩm không hợp lệ. Cần quản trị kiểm tra; chưa trừ kho.'
 if valid and enough then
  status='COMPLETED';message=''

@@ -1,6 +1,6 @@
 # QA — Đơn chờ nhập kho trong 24 giờ
 
-Ngày thực hiện: 29/10/2026. Dùng Redis thử riêng cổng 16381, không chỉnh tồn hoặc hủy đơn trên Redis nguồn để kiểm thử.
+Chính sách cập nhật: 19/11/2026. Dùng Redis thử riêng cổng 16381, không chỉnh tồn hoặc hủy đơn trên Redis nguồn để kiểm thử.
 
 ## Tự động
 
@@ -10,7 +10,7 @@ npm test đã chạy thành công:
 - Thiếu kho → WAITING_STOCK, không trừ một phần, không chiếm worker và không tăng số lượt khi chỉ quét kiểm tra kho.
 - Cập nhật kho qua API sản phẩm → xếp lại một lần, xác nhận và trừ đúng kho.
 - Hạn cố định 24 giờ từ createdAtMs; dùng timestamp quá hạn trong DB thử để kiểm tra, không chờ thực tế 24 giờ.
-- Quá hạn vẫn chờ admin, không tự hủy; hàng bổ sung sau hạn không tự xác nhận.
+- Quá hạn tự chuyển CANCELLED, báo admin và khách hàng đúng một lần; hàng bổ sung sau hạn không tự xác nhận, không trừ kho.
 - Hạn đi qua trong lúc processing cũng không được xác nhận muộn.
 - Thông báo thiếu hàng/hết hạn không lặp theo lượt quét.
 - Hai yêu cầu hủy đồng thời chỉ có một sự kiện/thông báo; đơn đang xử lý bị hủy thì finish bỏ qua, không trừ kho.

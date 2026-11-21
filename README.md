@@ -26,7 +26,7 @@ Lần đầu npm install. Cấu hình Redis, tài khoản quản trị, thời g
 3. Đủ hàng: xác nhận COMPLETED (Chờ đóng gói), trừ toàn bộ kho đúng một lần, thông báo khách và RPUSH sang fulfillment:packing:queue.
 4. Thiếu hàng: chuyển WAITING_STOCK, báo admin và khách. Không trừ kho, không đếm thử lại 3 lần và không chiếm worker.
 5. Hệ thống kiểm tra lại tồn kho tự động (kể cả cập nhật từ P3X). Khi đủ toàn bộ hàng trong 24 giờ **từ thời điểm đặt đơn**, đơn được xếp lại cuối queue để kiểm tra và xác nhận. Không giữ chỗ tồn kho trong thời gian chờ; nếu có cạnh tranh kho, worker kiểm tra lại nguyên tử trước khi trừ.
-6. Sau 24 giờ: vẫn WAITING_STOCK, báo admin cần quyết định; không tự hủy và không tự xác nhận muộn. Mốc 24 giờ không được đặt lại khi khởi động lại hoặc kiểm tra nhiều lần.
+6. Sau 24 giờ: hệ thống tự chuyển đơn chờ hàng sang CANCELLED, thông báo cho admin và khách hàng; không trừ kho và không tự xác nhận muộn. Mốc 24 giờ không được đặt lại khi khởi động lại hoặc kiểm tra nhiều lần.
 7. Admin bấm Hủy đơn, nhập lý do. Đơn CANCELLED được gỡ khỏi queue/processing/chờ kho, gửi thông báo và lý do cho khách. Đơn đã xác nhận không hủy qua chức năng này; đơn đang xử lý bị hủy trước khi trừ kho sẽ được finish bỏ qua.
 
 Worker có một tiến trình local. Thanh chỉnh 1–60 giây áp dụng từ đơn nhận tiếp theo và lưu settings:worker:delayMs. Nút tạm dừng chỉ ngừng nhận xử lý đơn; việc theo dõi chờ hàng vẫn hoạt động. Đơn đang xử lý giữ thời gian ban đầu. Cần backend và Redis hoạt động để tự xác nhận; khi khởi động lại, hệ thống đọc trạng thái/mốc chờ từ Redis và tiếp tục.
@@ -50,7 +50,7 @@ Kết nối P3X desktop vào 127.0.0.1:6379, chọn DB 1 (hoặc DB thật tại
 | order:queue, order:processing | List | FIFO và giữ đơn đang xử lý |
 | order:status:<status> | Set | Chỉ mục PENDING / PROCESSING / WAITING_STOCK / COMPLETED / PACKING / READY_TO_SHIP / SHIPPING / DELIVERED / FAILED / CANCELLED |
 | order:created | Sorted Set | Thời gian đặt, mili giây |
-| order:stock-wait | Sorted Set | Hạn 24 giờ của đơn đang chờ/xếp lại; key hết hạn chờ được bỏ khỏi chỉ mục thời hạn nhưng vẫn giữ trạng thái WAITING_STOCK chờ admin |
+| order:stock-wait | Sorted Set | Hạn 24 giờ của đơn đang chờ/xếp lại; đơn hết hạn tự hủy, được gỡ khỏi các hàng đợi và chỉ mục chờ |
 | order:events | Stream | Nhật ký xử lý, không phải queue consumer group |
 | fulfillment:packing:queue / active | List | Chờ / đang đóng gói |
 | fulfillment:shipping:queue / active | List | Chờ / đang giao hàng |
@@ -59,7 +59,7 @@ Kết nối P3X desktop vào 127.0.0.1:6379, chọn DB 1 (hoặc DB thật tại
 | settings:worker:delayMs | String | Thời gian xử lý đã lưu |
 | auth:* | Hash/String | Tài khoản và phiên, không công khai |
 
-Hash đơn chờ có stockWaitStartedAt, stockWaitDeadlineAt, stockWaitExpired. Hạn được tính từ createdAtMs hoặc chỉ mục order:created của đơn cũ. Không dùng TTL xóa đơn. Đơn thiếu kho cũ FAILED/RETRYING được chuyển sang WAITING_STOCK khi khởi động bản mới, giữ mốc đặt ban đầu. Nếu đã quá 24 giờ thì báo admin, không tự xác nhận.
+Hash đơn chờ có stockWaitStartedAt, stockWaitDeadlineAt, stockWaitExpired. Hạn được tính từ createdAtMs hoặc chỉ mục order:created của đơn cũ. Không dùng TTL xóa đơn. Đơn thiếu kho cũ FAILED/RETRYING được chuyển sang WAITING_STOCK khi khởi động bản mới, giữ mốc đặt ban đầu. Nếu đã quá 24 giờ thì tự hủy và báo admin cùng khách hàng, không tự xác nhận.
 
 ## Kiểm thử
 

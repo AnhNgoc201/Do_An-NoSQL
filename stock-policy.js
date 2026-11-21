@@ -49,16 +49,23 @@ local function deadline(k,now)
  return created+${STOCK_WINDOW_MS}
 end
 local function expireNotice(k,at)
- redis.call('ZREM','order:stock-wait',redis.call('HGET',k,'orderId') or string.sub(k,7))
- if redis.call('HGET',k,'stockWaitExpired')~='1' then
-  redis.call('HSET',k,'stockWaitExpired','1','errorMessage','Đã quá 24 giờ chờ hàng. Đơn đang chờ cửa hàng quyết định; chưa trừ kho.')
-  record(k,'STOCK_WAIT_EXPIRED','Quá 24 giờ, cần quản trị kiểm tra nguồn hàng hoặc hủy đơn.',at)
-  notice(k,'STOCK_WAIT_EXPIRED','Đơn '..(redis.call('HGET',k,'orderId') or '')..' đã quá 24 giờ chờ hàng. Cần xử lý hoặc hủy đơn.',at,true,false)
- end
+ local state=redis.call('HGET',k,'status')
+ if state~='WAITING_STOCK' and state~='PENDING' and state~='PROCESSING' and state~='FAILED' and state~='RETRYING' then return end
+ local id=redis.call('HGET',k,'orderId') or string.sub(k,7)
+ local reason='Không bổ sung đủ hàng trong 24 giờ từ lúc đặt. Hệ thống tự động hủy đơn; chưa trừ kho.'
+ redis.call('HSET',k,'status','CANCELLED','stockWaitExpired','1','stockWaitDeadlineAt',deadline(k,clockMs()),'cancelledAt',at,'cancelledBy','system','cancelReason',reason,'errorMessage',reason,'failureCode','STOCK_WAIT_EXPIRED')
+ redis.call('HDEL',k,'nextRetryAt')
+ for _,s in ipairs({'PENDING','PROCESSING','WAITING_STOCK','FAILED','RETRYING'}) do redis.call('SREM','order:status:'..s,id) end
+ redis.call('LREM','order:queue',0,id);redis.call('LREM','order:processing',0,id)
+ redis.call('ZREM','order:stock-wait',id);redis.call('ZREM','order:retry',id)
+ redis.call('SADD','order:status:CANCELLED',id)
+ record(k,'CANCELLED',reason,at)
+ notice(k,'CANCELLED','Đơn '..id..' đã tự động hủy. '..reason,at,true,true)
 end
 local function waitStock(k,now,at)
  local id=redis.call('HGET',k,'orderId') or string.sub(k,7);local untilMs=deadline(k,now)
- redis.call('HSET',k,'status','WAITING_STOCK','stockWaitDeadlineAt',untilMs,'failureCode','OUT_OF_STOCK','errorMessage',now>=untilMs and 'Đã quá 24 giờ chờ hàng. Đơn đang chờ cửa hàng quyết định; chưa trừ kho.' or 'Cửa hàng đang chờ bổ sung hàng. Đơn sẽ được tự động xác nhận khi đủ hàng trong 24 giờ từ lúc đặt.')
+ if now>=untilMs then expireNotice(k,at);return end
+ redis.call('HSET',k,'status','WAITING_STOCK','stockWaitDeadlineAt',untilMs,'failureCode','OUT_OF_STOCK','errorMessage','Cửa hàng đang chờ bổ sung hàng. Đơn tự động hủy nếu không đủ hàng trong 24 giờ từ lúc đặt.')
  redis.call('HSETNX',k,'stockWaitStartedAt',at)
  redis.call('HDEL',k,'processedAt','nextRetryAt')
  for _,s in ipairs({'PENDING','PROCESSING','FAILED','RETRYING'}) do redis.call('SREM','order:status:'..s,id) end
@@ -68,9 +75,8 @@ local function waitStock(k,now,at)
   redis.call('HSET',k,'stockWaitNotified','1')
   record(k,'WAITING_STOCK','Thiếu hàng, giữ đơn chờ bổ sung kho; chưa trừ kho.',at)
   notice(k,'WAITING_STOCK','Đơn '..id..' chưa đủ hàng. Hãy bổ sung kho trong 24 giờ từ lúc đặt hoặc hủy đơn nếu không có nguồn cung.',at,true,false)
-  notice(k,'WAITING_STOCK','Đơn '..id..' đang chờ cửa hàng bổ sung hàng. Cửa hàng sẽ thông báo khi xác nhận hoặc hủy đơn.',at,false,true)
+  notice(k,'WAITING_STOCK','Đơn '..id..' đang chờ bổ sung hàng. Đơn sẽ tự động hủy nếu không đủ hàng trong 24 giờ từ lúc đặt.',at,false,true)
  end
- if now>=untilMs then expireNotice(k,at) end
 end
 `;
 const refreshStockWait=stockLua+`
